@@ -30,7 +30,8 @@ use esp_radio::wifi::{
     ClientConfig, ModeConfig, ScanConfig, WifiController, WifiDevice, WifiEvent, WifiStaState,
 };
 use log::info;
-use mcutie::{McutieBuilder, McutieTask, MqttMessage, PublishBytes, Publishable, Topic};
+use mcutie::{McutieBuilder, MqttMessage, Publishable, Topic};
+use smart_leds::hsv::{Hsv, hsv2rgb};
 use smart_leds::{RGB8, SmartLedsWrite};
 use tanuki_common::capabilities::light::{Color, LightState};
 
@@ -180,7 +181,7 @@ async fn main(spawner: Spawner) -> ! {
                 log::info!("MQTT connected");
             }
             MqttMessage::Disconnected => {
-                log::info!("MQTT disconnected");
+                panic!("MQTT disconnected");
             }
             MqttMessage::Publish(Topic::General(topic), payload) => {
                 log::info!("MQTT publish on topic '{}'", topic);
@@ -203,6 +204,11 @@ async fn main(spawner: Spawner) -> ! {
 
                                 Some(RGB8 { r, g, b })
                             }
+                            Some(Color::Hs { h, s }) => Some(hsv2rgb(Hsv {
+                                hue: (h / 360. * 255.) as u8,
+                                sat: (s * 255.) as u8,
+                                val: (state.brightness.unwrap_or(1.) * 255.) as u8,
+                            })),
                             None => {
                                 let brightness = (state.brightness.unwrap_or(0.) * 255.) as u8;
                                 Some(RGB8 {
@@ -377,4 +383,13 @@ async fn led_task(mut ws: SmartLedsAdapter<'static>) -> ! {
 
         Timer::after(Duration::from_millis(pattern.update_rate())).await;
     }
+}
+
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    log::error!("Panic: {info}");
+
+    embassy_time::block_for(Duration::from_secs(1));
+
+    esp_hal::system::software_reset();
 }
